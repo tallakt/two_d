@@ -1,5 +1,5 @@
 defmodule TwoD.Helpers do
-  @deg_to_rad 180.0 * :math.pi
+  @deg_to_rad :math.pi / 180.0
 
   def rotate({x, y}, angle) do
     radians = angle * @deg_to_rad
@@ -7,50 +7,55 @@ defmodule TwoD.Helpers do
       x * :math.sin(radians) + y * :math.cos(radians) }
   end
 
-  defp round_point({x, y}), do: [round(x), round(y)]
+  def round_point({x, y}), do: [round(x), round(y)]
 
-  defmacro def_optimized_rotate(angle_quoted) do
-    # angle is still code, so it must be evaluated to get a number
-    {angle, _} = Code.eval_quoted angle_quoted
+  def prepare_observed_vector(vector, angle, axis) do
+    rotate(vector, angle) |> round_point |> Enum.zip([axis, axis])
+  end
 
-    # We are using the two unit vectors to observe how they are affected by a
-    # rotation
-    rot_x = rotate({1, 0}, angle) |> round_point |> Enum.zip([:x, :y])
-    rot_y = rotate({0, 1}, angle) |> round_point |> Enum.zip([:x, :y])
+  defmacro def_optimized_rotate(angle) do
+    result = quote(bind_quoted: [angle_copy: angle], unquote: false) do
+      # We are using the two unit vectors to observe how they are affected by a
+      # rotation
+      rot_x = TwoD.Helpers.prepare_observed_vector {1, 0}, angle_copy, :x
+      rot_y = TwoD.Helpers.prepare_observed_vector {0, 1}, angle_copy, :y
 
-    # Now map each of these to a quoted expression
-    [xx, xy, yx, yy] =
-      (rot_x ++ rot_y)
-      |> Enum.map(fn
-          {-1, name} ->
-            quote do: -unquote(Macro.var(name, __MODULE__))
-          {0, _} ->
-            nil
-          {1, name} ->
-            Macro.var(name, __MODULE__)
-        end)
+      # Now map each of these to a quoted expression
+      [xx, xy, yx, yy] =
+        (rot_x ++ rot_y)
+        |> Enum.map(fn
+            {-1, axis} ->
+              quote do: (-unquote(Macro.var(axis, __MODULE__)))
+            {0, _} ->
+              nil
+            {1, axis} ->
+              Macro.var(axis, __MODULE__)
+          end)
 
-    # at last return a quoted function definition
-    quote do
-      def rotate({x, y}, unquote(angle * 1.0)) do
-        {unquote(xx || yx), unquote(xy || yy)}
+      quoted_code_for_x = (xx || yx)
+      quoted_code_for_y = (xy || yy)
+      quoted_xy = for v <- [:x, :y], do: Macro.var(v, __MODULE__)
+
+      def rotate({unquote_splicing(quoted_xy)}, unquote(angle_copy)) do
+        {unquote(quoted_code_for_x), unquote(quoted_code_for_y)}
       end
     end
+
+
+    # IO.puts "== resulting code"
+    # IO.puts Macro.to_string(result)
+    result
   end
 end
 
 defmodule TwoD do
   require TwoD.Helpers
+  @angles for n <- -4..4, do: 90.0 * n
 
   # Optimized versions of the code
-  TwoD.Helpers.def_optimized_rotate(-270)
-  TwoD.Helpers.def_optimized_rotate(-180)
-  TwoD.Helpers.def_optimized_rotate(-90)
-  TwoD.Helpers.def_optimized_rotate(0)
-  TwoD.Helpers.def_optimized_rotate(90)
-  TwoD.Helpers.def_optimized_rotate(180)
-  TwoD.Helpers.def_optimized_rotate(270)
+  for angle <- @angles, do: TwoD.Helpers.def_optimized_rotate(angle)
   
   # This general purpose implementation will serve any other angle
   def rotate(point, angle), do: TwoD.Helpers.rotate(point, angle)
 end
+

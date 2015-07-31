@@ -1,18 +1,23 @@
 defmodule TwoD.Tests do
   use ExUnit.Case, async: true
+  alias TwoD.Helpers, as: H
+
+  @point {123.0, 456.0}
   
-  def test_generic_vs_optimized(angle) do
-    point = {123.0, 456.0}
-    {x1, y1} = TwoD.rotate(point, -270.0) 
-    {x2, y2} = TwoD.Helpers.rotate(point, -270.0) 
-    assert_in_delta x1, x2, 0.01
-    assert_in_delta y1, y2, 0.01
+  test "optimized rotates must match generic version" do
+    assert (TwoD.rotate(@point, -270.0) |> H.round_point) == 
+      (H.rotate(@point, -270.0) |> H.round_point)
+
+    assert (TwoD.rotate(@point, 0.0) |> H.round_point) == 
+      (H.rotate(@point, 0.0) |> H.round_point)
+
+    assert (TwoD.rotate(@point, 90.0) |> H.round_point) == 
+      (H.rotate(@point, 90.0) |> H.round_point)
   end
 
-  test "optimized rotates must match generic version" do
-    test_generic_vs_optimized -270.0
-    test_generic_vs_optimized 0.0
-    test_generic_vs_optimized 90.0
+  test "the non right/straight angles should still work" do
+    assert (TwoD.rotate(@point, 85.0) |> H.round_point) == 
+      (H.rotate(@point, 85.0) |> H.round_point)
   end
 end
 
