@@ -7,50 +7,41 @@ defmodule TwoD.Helpers do
       x * :math.sin(radians) + y * :math.cos(radians) }
   end
 
-  def round_point({x, y}), do: [round(x), round(y)]
-
-  def prepare_observed_vector(vector, angle, axis) do
-    rotate(vector, angle) |> round_point |> Enum.zip([axis, axis])
-  end
-
   defmacro def_optimized_rotate(angle) do
-    result = quote(bind_quoted: [angle_copy: angle], unquote: false) do
-      # We are using the two unit vectors to observe how they are affected by a
-      # rotation
-      rot_x = TwoD.Helpers.prepare_observed_vector {1, 0}, angle_copy, :x
-      rot_y = TwoD.Helpers.prepare_observed_vector {0, 1}, angle_copy, :y
+    res=quote(bind_quoted: [angle_copy: angle], unquote: false) do
+      x_quoted = Macro.var(:x, __MODULE__)
+      y_quoted = Macro.var(:y, __MODULE__)
+      neg_x_quoted = quote do: (-unquote(Macro.var(:x, __MODULE__)))
+      neg_y_quoted = quote do: (-unquote(Macro.var(:y, __MODULE__)))
 
-      # Now map each of these to a quoted expression
-      [xx, xy, yx, yy] =
-        (rot_x ++ rot_y)
-        |> Enum.map(fn
-            {-1, axis} ->
-              quote do: (-unquote(Macro.var(axis, __MODULE__)))
-            {0, _} ->
-              nil
-            {1, axis} ->
-              Macro.var(axis, __MODULE__)
-          end)
+      # normalize to 0..360; must add 360 in case of negative angle values
+      normalized = angle_copy |> round |> rem(360) |> Kernel.+(360) |> rem(360)
 
-      quoted_code_for_x = (xx || yx)
-      quoted_code_for_y = (xy || yy)
-      quoted_xy = for v <- [:x, :y], do: Macro.var(v, __MODULE__)
+      result_vars_quoted = case normalized do
+        0 -> 
+          [x_quoted, y_quoted]
+        90 ->
+          [neg_y_quoted, x_quoted]
+        180 ->
+          [neg_x_quoted, neg_y_quoted]
+        270 ->
+          [y_quoted, neg_x_quoted]
+        _ ->
+          raise "Optimized angles must be right or straight"
+      end 
 
-      def rotate({unquote_splicing(quoted_xy)}, unquote(angle_copy)) do
-        {unquote(quoted_code_for_x), unquote(quoted_code_for_y)}
+      def rotate({unquote_splicing([x_quoted, y_quoted])}, unquote(1.0 * angle_copy)) do
+        {unquote_splicing(result_vars_quoted)}
       end
     end
-
-
-    # IO.puts "== resulting code"
-    # IO.puts Macro.to_string(result)
-    result
+    res |> Macro.to_string |> IO.puts
+    res
   end
 end
 
 defmodule TwoD do
   require TwoD.Helpers
-  @angles for n <- -4..4, do: 90.0 * n
+  @angles for n <- -360..360, rem(n, 90) == 0, do: n
 
   # Optimized versions of the code
   for angle <- @angles, do: TwoD.Helpers.def_optimized_rotate(angle)
@@ -58,4 +49,3 @@ defmodule TwoD do
   # This general purpose implementation will serve any other angle
   def rotate(point, angle), do: TwoD.Helpers.rotate(point, angle)
 end
-
